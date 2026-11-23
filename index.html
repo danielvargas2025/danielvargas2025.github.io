@@ -80,6 +80,9 @@ em{font-style:normal;color:#1f5fbf}
 .row3 .del{border-color:var(--r);color:var(--r)}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#0b2a5bee;color:#fff;padding:10px 16px;border-radius:20px;font-size:13px;z-index:80;max-width:88vw;text-align:center;opacity:0;pointer-events:none;transition:opacity .2s}
 #toast.show{opacity:1}
+#tmw{position:fixed;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:min(300px,calc(100vw - 24px));background:#fff;border:1.5px solid var(--n);border-radius:14px;box-shadow:0 10px 28px #0b2a5b4d;padding:12px;z-index:70;display:grid;gap:10px;text-align:center}
+#tmw b{font-size:14px}
+#tmw .t{font-size:30px;font-weight:800;line-height:1;letter-spacing:.5px;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -143,6 +146,7 @@ em{font-style:normal;color:#1f5fbf}
 <div id="sheet" hidden></div>
 <div id="modal" hidden><div class="box" id="mbox"></div></div>
 <div id="toast"></div>
+<div id="tmw" role="dialog" aria-label="Cronómetro" hidden></div>
 
 <script>
 const W=1920,H=1440,PW='4grupIngProy26',KEY='mapaDomeyko1',STAIR=150;
@@ -273,6 +277,47 @@ document.addEventListener('click',e=>{
   if(!e.target.closest('.sr'))$('dd').hidden=true;
 });
 
+/* ---------- Cronómetro ---------- */
+const tm={st:null,acc:0,t0:0,raf:0},tmBox=$('tmw');
+const tmNow=()=>tm.acc+(tm.st=='run'?Date.now()-tm.t0:0);
+function tmFmt(ms){
+  const h=Math.floor(ms/10),p=n=>String(n).padStart(2,'0');
+  return p(Math.floor(h/6000))+':'+p(Math.floor(h/100)%60)+'.'+p(h%100);
+}
+function tmTick(){
+  const t=$('tmt');if(t)t.textContent=tmFmt(tmNow());
+  cancelAnimationFrame(tm.raf);
+  if(tm.st=='run')tm.raf=requestAnimationFrame(tmTick);
+}
+function tmDraw(){
+  const s=tm.st;
+  if(!s){tmBox.hidden=true;tmBox.innerHTML='';return}
+  tmBox.hidden=false;
+  if(s=='ask'||s=='rm'){
+    tmBox.innerHTML=`<b>${s=='ask'?'¿Quieres activar el cronómetro?':'¿Quieres quitar la ruta actual?'}</b><div class="row3"><button class="pri" id="tmy">Sí</button><button id="tmn">No</button></div>`;
+    $('tmy').onclick=s=='ask'?tmStart:tmClearRoute;
+    $('tmn').onclick=tmReset;
+  }else{
+    tmBox.innerHTML=`<div class="t" id="tmt"></div><div class="row3"><button class="pri" id="tmp">${s=='run'?'Pausar':'Reanudar'}</button><button class="del" id="tmq">Quitar</button></div>`;
+    $('tmp').onclick=tmToggle;$('tmq').onclick=tmRemove;
+    tmTick();
+  }
+}
+function tmAsk(){cancelAnimationFrame(tm.raf);tm.st='ask';tm.acc=0;tmDraw()}
+function tmStart(){tm.acc=0;tm.t0=Date.now();tm.st='run';tmDraw()}
+function tmToggle(){
+  if(tm.st=='run'){tm.acc=tmNow();tm.st='pause'}
+  else{tm.t0=Date.now();tm.st='run'}
+  tmDraw();
+}
+function tmRemove(){tm.acc=tmNow();tm.st='rm';cancelAnimationFrame(tm.raf);tmDraw()}
+function tmReset(){cancelAnimationFrame(tm.raf);tm.st=null;tm.acc=0;tmDraw()}
+function tmClearRoute(){
+  route=[];origin=null;dest=null;picking=false;
+  $('card').hidden=true;$('note').textContent='';$('q').value='';$('lg').textContent='';
+  tmReset();sheet();render();
+}
+
 /* ---------- Buscador ---------- */
 function dd(list){
   const d=$('dd');d.hidden=false;
@@ -285,7 +330,7 @@ $('q').oninput=()=>{
 $('all').onclick=()=>dd(rooms());
 $('dd').onclick=e=>{const b=e.target.closest('button');if(b)choose(N(b.dataset.id))};
 function choose(n){
-  dest=n;origin=null;route=[];picking=true;mode=null;
+  tmReset();dest=n;origin=null;route=[];picking=true;mode=null;
   $('q').value=n.name;$('dd').hidden=true;$('note').textContent='';$('lg').textContent=' ('+n.name+')';
   $('cn').textContent=n.name;$('cb').textContent=n.bld||'—';$('cp').textContent=n.f+'° Piso';$('card').hidden=false;
   sheet();render();
@@ -305,6 +350,7 @@ function setOrigin(n){
   fitTo(r.map(N).filter(m=>m.f==n.f));
   const f=[...new Set(r.map(i=>N(i).f))];
   $('note').textContent=f.length>1?'La ruta cambia de piso: '+f.map(x=>x+'° Piso').join(' → ')+'. Usa los botones de piso para seguirla.':'';
+  tmAsk();
 }
 
 /* ---------- Modo desarrollador ---------- */
@@ -331,7 +377,7 @@ $('bx').onclick=()=>modal(`<div><h3>Borrar mapa</h3><p>Se borrarán la imagen y 
     const ids=new Set(S.nodes.filter(n=>n.f==floor).map(n=>n.id));
     S.nodes=S.nodes.filter(n=>!ids.has(n.id));
     S.nodes.forEach(n=>{n.adj=n.adj.filter(i=>!ids.has(i));n.pr=n.pr.filter(i=>!ids.has(i))});
-    S.imgs[floor]='';route=[];origin=null;if(dest&&ids.has(dest.id)){dest=null;$('card').hidden=true}
+    S.imgs[floor]='';route=[];origin=null;tmReset();if(dest&&ids.has(dest.id)){dest=null;$('card').hidden=true}
     save();closeM();setFloor(floor);
   };
 });
@@ -363,7 +409,7 @@ $('fi').onchange=e=>{
       $('mo').onclick=()=>{
         S.nodes=nodes;
         if(d.imgs&&typeof d.imgs=='object')Object.entries(d.imgs).forEach(([k,v])=>{if([1,2,3].includes(+k)&&typeof v=='string')S.imgs[k]=v});
-        route=[];origin=null;dest=null;picking=false;$('card').hidden=true;$('note').textContent='';$('q').value='';$('lg').textContent='';
+        route=[];origin=null;dest=null;picking=false;tmReset();$('card').hidden=true;$('note').textContent='';$('q').value='';$('lg').textContent='';
         sheet();save();closeM();setFloor(floor);toast('Se importaron '+nodes.length+' nodos');
       };
     });
@@ -386,7 +432,7 @@ function nodeForm(n,type,w){
       const rm=new Set([n.id,...n.pr]);
       S.nodes=S.nodes.filter(m=>!rm.has(m.id));
       S.nodes.forEach(m=>{m.adj=m.adj.filter(i=>!rm.has(i));m.pr=m.pr.filter(i=>!rm.has(i))});
-      route=[];origin=null;if(dest&&rm.has(dest.id)){dest=null;$('card').hidden=true}
+      route=[];origin=null;tmReset();if(dest&&rm.has(dest.id)){dest=null;$('card').hidden=true}
       save();closeM();render();
     };
     $('mbox').querySelector('form').onsubmit=ev=>{
@@ -400,7 +446,7 @@ function nodeForm(n,type,w){
       if(n.stair)n.pr.forEach(i=>{const c=N(i);c.name=n.name;c.bld=n.bld;c.show=n.show});
       n.adj.forEach(i=>{if(!ids.includes(i)){const m=N(i);if(m)m.adj=m.adj.filter(x=>x!=n.id)}});
       n.adj=ids;ids.forEach(i=>{const m=N(i);if(!m.adj.includes(n.id))m.adj.push(n.id)});
-      route=[];origin=null;save();closeM();render();
+      route=[];origin=null;tmReset();save();closeM();render();
     };
   });
 }
